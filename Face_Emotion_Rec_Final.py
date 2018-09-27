@@ -62,7 +62,6 @@ def getAllEncodingsFromS3():
 def localEmotionRecognition(img):
 
     img = cv2.resize(img, (740, 560))
-    # img = img[0:308,:]
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
@@ -83,13 +82,6 @@ def localEmotionRecognition(img):
         # [0, 1]
         img_pixels /= 255
         predictions = model.predict(img_pixels)
-        # max_index = np.argmax(predictions[0])
-        # overlay = img.copy()
-        # opacity = 0.4
-        # # cv2.rectangle(img, (x + w + 10, y - 25), (x + w + 150, y + 115),
-        # #   (64, 64, 64), cv2.FILLED)
-        # # cv2.addWeighted(overlay, opacity, img, 1 - opacity, 0, img)
-
         # connect face and expressions
         cv2.line(img, (int((x + x + w) / 2), y + 15),
                  (x + w, y - 20), (255, 255, 255), 1)
@@ -209,6 +201,8 @@ while True:
             known_people_encodings, face_encoding, tolerance=0.5)
         # If a match was found in known_face_encodings, just use the first one.
         if True in matches:
+            emotionDetect = ThreadWithReturnValue(target=localEmotionRecognition, args=(frame,))
+            emotionDetect.start()
             localEmotionRecognition(frame)
             first_match_index = matches.index(True)
             name = known_people_name[first_match_index]
@@ -238,6 +232,8 @@ while True:
         }
 
     process_this_frame = not process_this_frame
+    if people.face_found == True:
+        emotionDetect.join()
 
     if temp_person != people.val['name'] or temp_emotion != people.val['mood']:
         ws.send(json.dumps(people.val))
