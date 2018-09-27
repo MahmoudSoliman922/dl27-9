@@ -10,9 +10,8 @@ from keras.preprocessing import image
 import random
 import string
 from websocket import create_connection
-
+import base64
 #------- Classes and functions
-
 
 class people():
     face_found = False
@@ -20,6 +19,7 @@ class people():
         'name': 'Unknown',
         'mood': 'Unknown',
         'imageName': 'none',
+        'cam' : '1',
         'eventName': 'profile',
         'reactions': {
             'happy': '0',
@@ -92,7 +92,7 @@ def localEmotionRecognition(img):
             people.val['reactions'][emotions[i]] = round(
                 predictions[0][i]*100, 2)
             all_emotions_numbers.append(round(predictions[0][i]*100, 2))
-        if max(all_emotions_numbers) > 80:
+        if max(all_emotions_numbers) > 75:
             people.val['mood'] = emotions[all_emotions_numbers.index(
                 max(all_emotions_numbers))]
         else:
@@ -113,8 +113,9 @@ def uploadToS3(passed_small_frame):
     people.val['imageName'] = temp_image_word+'.jpg'
     people.val['name'] = temp_image_word
     print(people.val['imageName'])
+    small_frame = cv2.resize(passed_small_frame, (0, 0), fx=0.35, fy=0.35)
     cv2.imwrite(filename='Faces/' +
-                people.val['imageName'], img=passed_small_frame)
+                people.val['imageName'], img=small_frame)
     temp_image = face_recognition.load_image_file(
         'Faces/'+people.val['imageName'])
     temp_encoding = face_recognition.face_encodings(temp_image)[0]
@@ -126,6 +127,15 @@ def uploadToS3(passed_small_frame):
     s3.Bucket(encodingsBucket).upload_file("ImagesEncodings/" +
                                            temp_image_word+'.npy', temp_image_word+'.npy', ExtraArgs={'ACL': 'public-read'})
 
+def sendStream(passed_small_frame):
+    ret, jpeg = cv2.imencode('.jpg', passed_small_frame)
+    encodedMsg = base64.b64encode(jpeg)
+    # print(encodedMsg)
+    ws.send(json.dumps({
+        'eventName': 'stream',
+        'cam':'1',
+        'stream': encodedMsg
+    }))
 
 # opencv initialization
 face_cascade = cv2.CascadeClassifier(
@@ -186,7 +196,7 @@ while True:
     small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
     # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
     rgb_small_frame = small_frame[:, :, ::-1]
-
+    sendStream(small_frame)
     # Only process every other frame of video to save time
     if process_this_frame:
             # Find all the faces and face encodings in the current frame of video
@@ -210,10 +220,11 @@ while True:
             people.val['imageName'] = 'none'
             people.face_found = True
     if people.face_found == False and not face_encodings == []:
-        localEmotionRecognition(frame)
         print('unknown person detected!')
         uploadImage = ThreadWithReturnValue(target=uploadToS3, args=(frame,))
         uploadImage.start()
+        localEmotionRecognition(frame)
+
     elif face_encodings == []:
         people.val = {
             'name': 'Unknown',
